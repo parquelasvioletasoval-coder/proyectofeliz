@@ -1,0 +1,16 @@
+{
+  "name": "panel-avance-terminaciones",
+  "version": "1.0.0",
+  "description": "Panel interactivo de seguimiento de terminaciones PLV3",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

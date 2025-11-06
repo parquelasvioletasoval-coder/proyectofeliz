@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Avance terminaciones PLV3</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background: #f4f4f4; display: flex; justify-content: center; padding: 20px; }
+  .container { background: white; padding: 20px; border-radius: 10px; width: 950px; max-height: 90vh; overflow-y: scroll; box-shadow: 0 0 15px #ccc; }
+  h1 { text-align: center; color: #333; margin-bottom: 10px; }
+  #contador { font-weight: bold; text-align: center; margin-bottom: 10px; }
+  .barraContainer { background: #e0e0e0; border-radius: 10px; height: 20px; width: 100%; margin-bottom: 10px; overflow: hidden; }
+  .barra { height: 100%; width: 0%; text-align: center; color: white; font-weight: bold; line-height: 20px; }
+  .tabs { display: flex; justify-content: center; margin: 15px 0; flex-wrap: wrap; }
+  .tab { padding: 10px 20px; border: 1px solid #ccc; cursor: pointer; background: #eee; margin: 0 5px; border-radius: 5px 5px 0 0; }
+  .tab.active { background: #ddd; font-weight: bold; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .departamento { padding: 5px; margin: 5px 0; border-radius: 5px; background: #eee; }
+  .tareasContainer { margin-left: 15px; display: none; }
+  .progressBarDepto { background: #ccc; border-radius: 5px; height: 15px; width: 100%; margin-top: 5px; overflow: hidden; }
+  .progressFill { height: 100%; text-align: center; color: white; font-size: 12px; line-height: 15px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+  th { background: #eee; }
+  #graficoTorre, #graficoCurvas { width: 100%; max-width: 700px; margin: 20px auto; display: block; }
+  select, input, button { margin: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Avance terminaciones PLV3</h1>
+  <div id="contador">Resueltos: 0 / 430 (0%)</div>
+  <div class="barraContainer"><div id="barraTotal" class="barra">0%</div></div>
+
+  <!-- Pestañas -->
+  <div class="tabs">
+    <div class="tab active" data-tab="departamentos">🏢 Departamentos</div>
+    <div class="tab" data-tab="torres">📊 Torres</div>
+    <div class="tab" data-tab="tareas">🧾 Tareas</div>
+    <div class="tab" data-tab="curvas">📈 Curvas por tarea</div>
+  </div>
+
+  <!-- VISTA DEPARTAMENTOS -->
+  <div id="view-departamentos" class="view active">
+    <div>
+      <input type="text" id="buscarInput" placeholder="Buscar departamento...">
+      <select id="filtro">
+        <option value="todos">Todos</option>
+        <option value="resueltos">Resueltos</option>
+        <option value="noResueltos">No resueltos</option>
+      </select>
+      <select id="torreFiltro">
+        <option value="todas">Todas las torres</option>
+      </select>
+      <button id="exportarBtn">💾 Exportar Excel</button>
+      <button id="exportarPlantillaBtn">📄 Descargar plantilla</button>
+      <button id="guardarBtn">Guardar datos</button>
+    </div>
+    <div id="listaDepartamentos"></div>
+  </div>
+
+  <!-- VISTA TORRES -->
+  <div id="view-torres" class="view">
+    <h3>Avance por Torre</h3>
+    <canvas id="graficoTorre"></canvas>
+  </div>
+
+  <!-- VISTA TAREAS -->
+  <div id="view-tareas" class="view">
+    <h3>Resumen de tareas completadas</h3>
+    <table id="tablaTareas">
+      <thead>
+        <tr><th>Tarea</th><th>Completadas</th><th>Total</th><th>%</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- VISTA CURVAS -->
+  <div id="view-curvas" class="view">
+    <h3>Curvas de avance por tarea</h3>
+    <p>Selecciona tareas para comparar su avance:</p>
+    <select id="selectorCurvas" multiple size="6" style="width:100%;"></select>
+    <canvas id="graficoCurvas"></canvas>
+  </div>
+</div>
+
+<script>
+/* ------------------ DATOS BASE ------------------ */
+const tareas = [
+  "Limpieza y Reparación fisuras OG","Descarachado y pulido Departamento","Descarachado y pulido baño y cocina",
+  "Trazado Barandas","Instalación barandas departamentos","Rectificación de centros","Remates Húmedos Baño y Cocina",
+  "Yeso en recinto húmedos","Rasgos de puertas y ventanas","Trazado pasa buques","Moldaje pasa buque","Hormigonado pasa buque",
+  "Trazado Tabiques","Descargas sanitarias sector baños","Descargas sanitarias sector logia",
+  "Distribución agua potable logia y cocina","Estructurado de tabiques","Tabique primera cara",
+  "Distribución agua potable baños","Distribución eléctricas en tabiques","Enlauchado eléctrico",
+  "EIFS en rasgo de ventanas","Segunda Cara","Pasta en cielo y muro","Primera mano pintura",
+  "Estructuración soporte tina","Impermeabilización baños y cocinas","Impermeabilización terrazas",
+  "Instalación de tinas","Nivelación piso logia y terraza","Instalación cerámicas piso",
+  "Instalación cerámicas muros","Instalación de Guardapolvos recintos húmedos","Fragüe ceramicos piso y muro",
+  "Instalación guardapolvos mdf","Instalación de cornisas","Instalación artefactos sanitarios",
+  "Instalación de alfeizar","Instalar ventanas","Instalación de marcos","Instalación de puertas",
+  "Instalación topes de puertas","Instalación de mueble lavaplatos","Instalación de quincallería",
+  "Pintura esmalte sintetico barandas","Instalación cenefas","Instalación Celosias metalicas",
+  "Ejecución alambrado electricos departamentos","Instalación artefactos electricos","Instalación griferías",
+  "Pintado logia","Pintura texturizado logia","Instalación de tubería de gas","Instalación de nicho de gas",
+  "Instalación Calefón","Instalación atril lavadero","Instalación lavadero","Pintura terraza",
+  "Pintura texturizado terraza","Segunda mano pintura recintos húmedos","Ejecución cortagotera",
+  "Sellos elementos estructurales","Aseo Final"
+];
+
+const torres = [
+  { nombre: 'Torre 1', cantidad: 30 }, { nombre: 'Torre 2', cantidad: 20 },
+  { nombre: 'Torre 3', cantidad: 30 }, { nombre: 'Torre 4', cantidad: 30 },
+  { nombre: 'Torre 5', cantidad: 30 }, { nombre: 'Torre 6', cantidad: 30 },
+  { nombre: 'Torre 7', cantidad: 30 }, { nombre: 'Torre 8', cantidad: 30 },
+  { nombre: 'Torre 9', cantidad: 20 }, { nombre: 'Torre 10', cantidad: 30 },
+  { nombre: 'Torre 11', cantidad: 30 }, { nombre: 'Torre 12', cantidad: 30 },
+  { nombre: 'Torre 13', cantidad: 30 }, { nombre: 'Torre 14', cantidad: 30 },
+  { nombre: 'Torre 15', cantidad: 30 }
+];
+
+let departamentos = JSON.parse(localStorage.getItem('departamentos')) || [];
+if(departamentos.length===0){
+  torres.forEach((torre)=>{
+    for(let d=1; d<=torre.cantidad; d++){
+      const deptoTareas = tareas.map(t=>({nombre:t,resuelto:false,fechaProgramada:"",fechaReal:"",historial:[]}));
+      departamentos.push({ id: d, torre: torre.nombre, tareas: deptoTareas });
+    }
+  });
+  localStorage.setItem('departamentos',JSON.stringify(departamentos));
+}
+
+/* ------------------ FUNCIONES GENERALES ------------------ */
+function colorPorcentaje(p){const r=p<50?255:Math.round(255-((p-50)*5.1));const g=p>50?255:Math.round(p*5.1);return `rgb(${r},${g},0)`;}
+function guardar(){localStorage.setItem('departamentos',JSON.stringify(departamentos));}
+
+/* ------------------ CONTADORES Y TABLAS ------------------ */
+function actualizarContador(){
+  const total = departamentos.length*tareas.length;
+  const resueltos = departamentos.reduce((s,d)=>s+d.tareas.filter(t=>t.resuelto).length,0);
+  const p = ((resueltos/total)*100).toFixed(1);
+  document.getElementById("contador").textContent=`Resueltos: ${resueltos} / ${total} (${p}%)`;
+  const barra = document.getElementById("barraTotal");
+  barra.style.width=p+"%";
+  barra.style.background=colorPorcentaje(p);
+  barra.textContent=p+"%";
+}
+
+function actualizarTablaTareas(){
+  const tbody=document.querySelector("#tablaTareas tbody");
+  tbody.innerHTML="";
+  tareas.forEach(t=>{
+    const completadas = departamentos.filter(d=>d.tareas.find(x=>x.nombre===t && x.resuelto)).length;
+    const total = departamentos.length;
+    const p = ((completadas/total)*100).toFixed(1);
+    tbody.insertAdjacentHTML('beforeend',`<tr><td>${t}</td><td>${completadas}</td><td>${total}</td><td>${p}%</td></tr>`);
+  });
+}
+
+/* ------------------ RENDER DEPARTAMENTOS ------------------ */
+function renderDepartamentos(){
+  const lista=document.getElementById("listaDepartamentos");
+  const busqueda=document.getElementById("buscarInput").value.toLowerCase();
+  const filtro=document.getElementById("filtro").value;
+  const torreSel=document.getElementById("torreFiltro").value;
+  lista.innerHTML="";
+  departamentos.forEach(depto=>{
+    const completadas=depto.tareas.filter(t=>t.resuelto).length;
+    const porcentaje=(completadas/tareas.length)*100;
+    const visible=(busqueda===""||depto.id.toString().includes(busqueda))&&
+      (filtro==="todos"||(filtro==="resueltos"&&completadas===tareas.length)||(filtro==="noResueltos"&&completadas<tareas.length))&&
+      (torreSel==="todas"||torreSel===depto.torre);
+    if(!visible)return;
+    const div=document.createElement("div");
+    div.className="departamento";
+    div.innerHTML=`
+      <b>${depto.torre} - Depto ${depto.id}</b>
+      <div class="progressBarDepto"><div class="progressFill" style="width:${porcentaje}%;background:${colorPorcentaje(porcentaje)}">${porcentaje.toFixed(1)}%</div></div>
+      <button class="toggleTareas">Ver tareas</button>
+      <div class="tareasContainer">
+        ${depto.tareas.map((t,i)=>`
+          <div>
+            <input type="checkbox" data-torre="${depto.torre}" data-depto="${depto.id}" data-index="${i}" ${t.resuelto?"checked":""}>
+            ${t.nombre} | Programada: <input type="date" class="fechaProgramada" data-torre="${depto.torre}" data-depto="${depto.id}" data-index="${i}" value="${t.fechaProgramada}">
+            ${t.resuelto?` | Real: ${t.fechaReal}`:""}
+          </div>`).join("")}
+      </div>`;
+    lista.appendChild(div);
+  });
+  lista.querySelectorAll(".toggleTareas").forEach(btn=>btn.addEventListener("click",e=>{
+    const cont=e.target.nextElementSibling;
+    cont.style.display=(cont.style.display==="none"||cont.style.display==="")?"block":"none";
+  }));
+  lista.querySelectorAll("input[type=checkbox]").forEach(chk=>{
+    chk.addEventListener("change",e=>{
+      const d=departamentos.find(x=>x.id==e.target.dataset.depto && x.torre==e.target.dataset.torre);
+      const t=d.tareas[e.target.dataset.index];
+      t.resuelto=e.target.checked;
+      const hoy=new Date().toISOString().slice(0,10);
+      if(t.resuelto){if(!t.fechaReal)t.fechaReal=hoy;if(!t.historial.includes(hoy))t.historial.push(hoy);}
+      else{t.fechaReal="";t.historial.pop();}
+      guardar();actualizarContador();renderDepartamentos();
+    });
+  });
+  lista.querySelectorAll(".fechaProgramada").forEach(inp=>{
+    inp.addEventListener("change",e=>{
+      const d=departamentos.find(x=>x.id==e.target.dataset.depto && x.torre==e.target.dataset.torre);
+      d.tareas[e.target.dataset.index].fechaProgramada=e.target.value;guardar();
+    });
+  });
+}
+
+/* ------------------ GRÁFICOS ------------------ */
+let graficoTorre, graficoCurvas;
+
+function actualizarGraficoTorres(){
+  const ctx=document.getElementById("graficoTorre").getContext("2d");
+  const datos=torres.map(t=>{
+    const deptos=departamentos.filter(d=>d.torre===t.nombre);
+    const completadas=deptos.reduce((s,d)=>s+d.tareas.filter(x=>x.resuelto).length,0);
+    const total=deptos.length*tareas.length;
+    return total?(completadas/total*100).toFixed(1):0;
+  });
+  if(graficoTorre)graficoTorre.destroy();
+  graficoTorre=new Chart(ctx,{type:"bar",data:{labels:torres.map(t=>t.nombre),
+    datasets:[{label:"% Avance",data:datos}]},
+    options:{responsive:true,scales:{y:{beginAtZero:true,max:100}},plugins:{legend:{display:false}}}});
+}
+
+function actualizarGraficoCurvas(){
+  const select=document.getElementById("selectorCurvas");
+  const ctx=document.getElementById("graficoCurvas").getContext("2d");
+  const seleccionadas=[...select.selectedOptions].map(o=>o.value);
+  if(seleccionadas.length===0){if(graficoCurvas)graficoCurvas.destroy();return;}
+  const datasets=seleccionadas.map((tarea,i)=>{
+    const fechas=[];
+    const avancePorFecha={};
+    departamentos.forEach(d=>{
+      const t=d.tareas.find(x=>x.nombre===tarea);
+      if(t&&t.fechaReal){avancePorFecha[t.fechaReal]=(avancePorFecha[t.fechaReal]||0)+1;}
+    });
+    const fechasOrdenadas=Object.keys(avancePorFecha).sort();
+    let acumulado=0;
+    const datos=fechasOrdenadas.map(f=>{acumulado+=avancePorFecha[f];return{fecha:f,valor:(acumulado/departamentos.length*100).toFixed(1)};});
+    return{
+      label:tarea,
+      data:datos.map(d=>d.valor),
+      borderColor:`hsl(${i*50},70%,40%)`,
+      fill:false,
+      tension:0.2
+    };
+  });
+  if(graficoCurvas)graficoCurvas.destroy();
+  graficoCurvas=new Chart(ctx,{type:"line",
+    data:{labels:[...new Set(departamentos.flatMap(d=>d.tareas.flatMap(t=>t.historial))).sort()],datasets},
+    options:{responsive:true,scales:{y:{beginAtZero:true,max:100}},plugins:{legend:{position:"bottom"}}}});
+}
+
+/* ------------------ EVENTOS Y PESTAÑAS ------------------ */
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-"+tab.dataset.tab).classList.add("active");
+    if(tab.dataset.tab==="tareas")actualizarTablaTareas();
+    if(tab.dataset.tab==="torres")actualizarGraficoTorres();
+    if(tab.dataset.tab==="curvas")actualizarGraficoCurvas();
+  });
+});
+
+/* ------------------ FILTROS Y EXPORTACIÓN ------------------ */
+const torreFiltro=document.getElementById("torreFiltro");
+torres.forEach(t=>{
+  const opt=document.createElement("option");opt.value=t.nombre;opt.textContent=t.nombre;torreFiltro.appendChild(opt);
+});
+
+document.getElementById("exportarBtn").addEventListener("click",()=>{
+  const data=[];
+  departamentos.forEach(d=>{
+    d.tareas.forEach(t=>{
+      data.push({Torre:d.torre,Departamento:d.id,Tarea:t.nombre,Estado:t.resuelto?"Resuelto":"No resuelto",FechaProgramada:t.fechaProgramada,FechaReal:t.fechaReal,Historial:t.historial.join(", ")});
+    });
+  });
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Avance");
+  XLSX.writeFile(wb,"avance_terminaciones.xlsx");
+});
+
+const exportarPlantillaBtn=document.getElementById("exportarPlantillaBtn");
+exportarPlantillaBtn.addEventListener("click",()=>{
+  const data=[];
+  departamentos.forEach(d=>{
+    d.tareas.forEach(t=>{
+      data.push({Torre:d.torre,Departamento:d.id,Tarea:t.nombre,FechaProgramada:t.fechaProgramada});
+    });
+  });
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Plantilla");
+  XLSX.writeFile(wb,"plantilla_programacion.xlsx");
+});
+
+const inputFile=document.createElement("input");
+inputFile.type="file";inputFile.accept=".xlsx,.xls";inputFile.style.display="none";document.body.appendChild(inputFile);
+const cargarPlantillaBtn=document.createElement("button");
+cargarPlantillaBtn.textContent="📂 Cargar plantilla";
+exportarPlantillaBtn.insertAdjacentElement("afterend",cargarPlantillaBtn);
+cargarPlantillaBtn.addEventListener("click",()=>inputFile.click());
+inputFile.addEventListener("change",e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(evt){
+    const wb=XLSX.read(evt.target.result,{type:"binary"});
+    const sheet=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(sheet);
+    rows.forEach(row=>{
+      const depto=departamentos.find(d=>d.id==row.Departamento && d.torre==row.Torre);
+      if(depto){const tarea=depto.tareas.find(t=>t.nombre==row.Tarea);if(tarea&&row.FechaProgramada)tarea.fechaProgramada=row.FechaProgramada;}
+    });
+    guardar();renderDepartamentos();actualizarTablaTareas();alert("Plantilla cargada correctamente.");
+  };
+  reader.readAsBinaryString(file);
+});
+
+/* ------------------ INICIALIZACIÓN ------------------ */
+const selectorCurvas=document.getElementById("selectorCurvas");
+tareas.forEach(t=>{const opt=document.createElement("option");opt.value=t;opt.textContent=t;selectorCurvas.appendChild(opt);});
+selectorCurvas.addEventListener("change",actualizarGraficoCurvas);
+
+document.getElementById("buscarInput").addEventListener("input",renderDepartamentos);
+document.getElementById("filtro").addEventListener("input",renderDepartamentos);
+torreFiltro.addEventListener("input",renderDepartamentos);
+
+actualizarContador();
+actualizarTablaTareas();
+renderDepartamentos();
+</script>
+</body>
+</html>
